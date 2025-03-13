@@ -3,3 +3,4 @@ httpx==0.28.1
 openai==1.64.0
 streamlit-authenticator>=0.4.2
 PyYAML==6.0.2
+streamlit-extras==0.6.0
