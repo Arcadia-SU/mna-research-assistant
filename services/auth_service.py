@@ -21,7 +21,15 @@ class AuthService:
         # Essayer d'abord de charger depuis les secrets Streamlit si disponibles
         if hasattr(st, 'secrets') and 'auth_config' in st.secrets:
             logger.info("Utilisation de la configuration depuis les secrets Streamlit")
-            self.config = st.secrets['auth_config']
+            # Créer une copie modifiable du dictionnaire de secrets
+            self.config = dict(st.secrets['auth_config'])
+            # Assurez-vous que la structure interne est également copiée
+            if 'credentials' in self.config and 'usernames' in self.config['credentials']:
+                self.config['credentials'] = dict(self.config['credentials'])
+                self.config['credentials']['usernames'] = dict(self.config['credentials']['usernames'])
+                # Et aussi les utilisateurs individuels
+                for username in self.config['credentials']['usernames']:
+                    self.config['credentials']['usernames'][username] = dict(self.config['credentials']['usernames'][username])
         else:
             # Sinon, charger depuis le fichier
             self.load_config()
