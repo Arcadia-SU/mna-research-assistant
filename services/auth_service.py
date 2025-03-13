@@ -17,7 +17,15 @@ class AuthService:
         self.credentials_path = credentials_path
         self.config = None
         self.authenticator = None
-        self.load_config()
+        
+        # Essayer d'abord de charger depuis les secrets Streamlit si disponibles
+        if hasattr(st, 'secrets') and 'auth_config' in st.secrets:
+            logger.info("Utilisation de la configuration depuis les secrets Streamlit")
+            self.config = st.secrets['auth_config']
+        else:
+            # Sinon, charger depuis le fichier
+            self.load_config()
+            
         self.initialize_authenticator()
     
     def load_config(self):
