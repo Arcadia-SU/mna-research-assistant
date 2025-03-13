@@ -1,0 +1,299 @@
+import streamlit as st
+from services.llm_service import LLMService
+from PIL import Image
+import yaml
+import streamlit_authenticator as stauth
+from yaml.loader import SafeLoader
+from yaml.dumper import SafeDumper
+import os
+import logging
+import traceback
+
+# Configuration du logging
+logging.basicConfig(level=logging.DEBUG, 
+                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("mna_app")
+
+# Configuration du thème personnalisé et cacher la barre latérale par défaut
+st.set_page_config(
+    page_title="Assistant de Recherche M&A",
+    page_icon="",
+    layout="centered",
+    initial_sidebar_state="collapsed"
+)
+
+# Masquer le menu hamburger et la barre latérale complètement
+hide_menu_style = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    .css-1544g2n {padding-top: 0rem;}
+    </style>
+"""
+st.markdown(hide_menu_style, unsafe_allow_html=True)
+
+# Fonction d'aide pour afficher les détails d'une exception
+def format_exception(e):
+    return f"Exception: {str(e)}\n\nStacktrace:\n{''.join(traceback.format_tb(e.__traceback__))}"
+
+# Initialiser les variables d'état d'authentification
+if "authentication_status" not in st.session_state:
+    st.session_state["authentication_status"] = None
+if "name" not in st.session_state:
+    st.session_state["name"] = None
+if "username" not in st.session_state:
+    st.session_state["username"] = None
+
+# Fonction pour afficher le contenu de l'objet config pour debug
+def debug_config(config):
+    logger.debug(f"--- DEBUG CONFIG ---")
+    logger.debug(f"Cookie: {config.get('cookie', {})}")
+    
+    credentials = config.get('credentials', {})
+    logger.debug(f"Credentials structure: {list(credentials.keys())}")
+    
+    usernames = credentials.get('usernames', {})
+    logger.debug(f"Usernames: {list(usernames.keys())}")
+    
+    for username, data in usernames.items():
+        logger.debug(f"Username: {username}")
+        # Ne pas logger les mots de passe en clair
+        password_info = "Set" if data.get('password') else "Not set"
+        logger.debug(f"  - Email: {data.get('email')}")
+        logger.debug(f"  - Password: {password_info}")
+        logger.debug(f"  - Roles: {data.get('roles', [])}")
+        logger.debug(f"  - Failed attempts: {data.get('failed_login_attempts', 0)}")
+        logger.debug(f"  - Logged in: {data.get('logged_in', False)}")
+    
+    logger.debug(f"Preauthorized: {config.get('preauthorized', {})}")
+    logger.debug(f"--- END DEBUG CONFIG ---")
+
+# Fonction pour l'interface utilisateur principale après connexion
+def main_app_ui():
+    # CSS personnalisé pour un design minimaliste
+    st.markdown("""
+    <style>
+    .app-title {
+        text-align: center;
+        font-size: 2.5rem;
+        font-weight: 500;
+        color: #333;
+        margin-bottom: 0.8rem;
+    }
+    .title-container {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 1.5rem;
+    }
+    .stTextInput>div>div>input {
+        color: #333;
+        background-color: white;
+        border-radius: 5px;
+        border: 1px solid #ddd;
+        padding: 10px 15px;
+    }
+    .stButton>button {
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        padding: 10px 15px;
+        text-transform: uppercase;
+        font-weight: 600;
+        letter-spacing: 0.8px;
+    }
+    .stButton>button:hover {
+        background-color: #45a049;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Charger l'image pour l'avatar
+    try:
+        assistant_avatar = Image.open('/Users/oscarsatre/CascadeProjects/windsurf-project/mna-research-assistant/assets/cravate.png')
+    except Exception as e:
+        print(f"Erreur lors du chargement de l'image: {e}")
+        assistant_avatar = ""  # Utiliser un emoji par défaut en cas d'erreur
+
+    # Initialiser l'historique du chat
+    if "messages" not in st.session_state:
+        st.session_state.messages = [
+            {"role": "system", "content": "Vous êtes un assistant de recherche en fusions-acquisitions. Votre objectif est d'aider les analystes à effectuer des recherches pertinentes sur des transactions et des entreprises."}
+        ]
+
+    # Initialiser le service LLM
+    llm = LLMService()
+
+    # Afficher un design différent selon la taille de l'écran
+    is_mobile = False  # Simplification pour l'exemple
+    if is_mobile:
+        st.title(" Assistant de Recherche M&A")
+        message_container = st.container()
+    else:
+        # Design pour desktop avec plus d'espace
+        st.markdown("<div style='margin-top: 15vh'></div>", unsafe_allow_html=True)
+        
+        # Titre centré avec style minimaliste
+        st.markdown("<div class='title-container'><h1 class='app-title'> Assistant de Recherche M&A</h1></div>", unsafe_allow_html=True)
+        
+        # Créer un container pour les messages
+        message_container = st.container()
+
+    # Champ de saisie déjà stylisé par le CSS personnalisé
+    prompt = st.text_input("Posez votre question sur les transactions M&A:", key="chat_input")
+
+    # Afficher l'historique des messages (sauf le message système)
+    for message in st.session_state.messages[1:]:  # Ignorer le message système
+        if message["role"] == "user":
+            with st.chat_message(message["role"], avatar=""):
+                st.markdown(message["content"])
+        else:
+            with st.chat_message(message["role"], avatar=assistant_avatar):
+                st.markdown(message["content"])
+
+    # Traiter l'entrée utilisateur
+    if prompt:
+        # Ajouter la requête à l'historique
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        
+        # Ajouter la requête à la conversation envoyée à l'API
+        messages_for_api = st.session_state.messages.copy()
+        
+        # Afficher le message utilisateur et la réponse
+        with message_container:
+            with st.chat_message("user", avatar=""):
+                st.markdown(prompt)
+            with st.chat_message("assistant", avatar=assistant_avatar), st.empty(): # (Bug de streamlit : texte fantôme dupliqué si on n'ajoute pas cet empty)
+                stream = llm.get_stream(st.session_state.messages)
+                response = st.write_stream(stream)
+        
+        # Ajouter la réponse à l'historique
+        st.session_state.messages.append({"role": "assistant", "content": response})
+        
+        # Afficher un bouton pour effacer l'historique
+        if len(st.session_state.messages) > 2:  # Plus que le message système + 1 échange
+            if st.button("Nouvelle conversation"):
+                st.session_state.messages = [st.session_state.messages[0]]  # Garder uniquement le message système
+                st.experimental_rerun()
+
+# Chargement des informations d'authentification
+try:
+    logger.info("Début de l'initialisation de l'authentification")
+    
+    # D'abord essayer de charger le fichier credentials.yaml (fichier réel)
+    credentials_path = "config/credentials.yaml"
+    # Si le fichier n'existe pas, utiliser le fichier d'exemple (pour le développement)
+    if not os.path.exists(credentials_path):
+        credentials_path = "config/example_credentials.yaml"
+        st.warning("Utilisation du fichier d'authentification d'exemple. En production, créez un fichier credentials.yaml.")
+    
+    logger.info(f"Chargement du fichier de configuration: {credentials_path}")
+    with open(credentials_path, 'r') as file:
+        config = yaml.load(file, Loader=SafeLoader)
+    
+    # Afficher des informations détaillées sur la configuration
+    debug_config(config)
+    
+    # Créer l'objet authentificateur
+    logger.info("Création de l'objet Authenticate")
+    authenticator = stauth.Authenticate(
+        config['credentials'],
+        config['cookie']['name'],
+        config['cookie']['key'],
+        config['cookie']['expiry_days'],
+        config.get('preauthorized', {}).get('emails', [])
+    )
+    logger.info("Objet Authenticate créé avec succès")
+    
+    # Récupérer l'état d'authentification actuel
+    authentication_status = st.session_state.get("authentication_status", None)
+    
+    # Si l'utilisateur n'est pas connecté, afficher le formulaire de connexion
+    if not authentication_status:
+        logger.info("Affichage du formulaire de connexion")
+        try:
+            # Important: Dans la version 0.4.2, login() modifie directement st.session_state
+            logger.debug("Appel de la méthode login() de l'authentificateur")
+            
+            col1, col2, col3 = st.columns([1,2,1])
+            with col2:
+                # Ajouter un peu d'espace au-dessus du formulaire
+                st.markdown("<div style='margin-top: 15vh'></div>", unsafe_allow_html=True)
+                
+                # Afficher le logo ou le titre
+                st.markdown("<h1 style='text-align: center;'>Assistant de Recherche M&A</h1>", unsafe_allow_html=True)
+                st.markdown("<p style='text-align: center; margin-bottom: 30px;'>Veuillez vous connecter pour accéder à l'application</p>", unsafe_allow_html=True)
+                
+                # Afficher les utilisateurs disponibles pour le debug en mode dev
+                if os.getenv("ENVIRONMENT") != "production":
+                    st.info("Utilisateurs disponibles:")
+                    for username_key in config['credentials']['usernames'].keys():
+                        st.write(f"- {username_key}")
+                
+                # Appel sans déballage de valeur de retour
+                try:
+                    authenticator.login(
+                        location='main',
+                        fields={
+                            'Form name': 'Connexion', 
+                            'Username': 'Identifiant', 
+                            'Password': 'Mot de passe', 
+                            'Login': 'Se connecter'
+                        }
+                    )
+                except Exception as login_error:
+                    logger.error(f"Erreur spécifique lors de la connexion: {format_exception(login_error)}")
+                    st.error(f"Erreur de connexion: {str(login_error)}")
+                    st.info("Essayez de vous connecter avec l'un des utilisateurs listés ci-dessus.")
+            
+            # Récupérer les valeurs depuis st.session_state
+            name = st.session_state.get("name", None)
+            authentication_status = st.session_state.get("authentication_status", None)
+            username = st.session_state.get("username", None)
+            
+            logger.info(f"État de la session après login: name={name}, auth_status={authentication_status}, username={username}")
+            
+        except Exception as e:
+            logger.error(f"Erreur pendant la connexion: {format_exception(e)}")
+            st.error(f"Erreur pendant la connexion: {str(e)}")
+            # Afficher le traceback complet pour le débogage
+            st.exception(e)
+            st.stop()
+    
+        # Vérifier le statut d'authentification après la connexion
+        if authentication_status == False:
+            logger.warning("Tentative de connexion avec des identifiants incorrects")
+            with col2:
+                st.error("Identifiants incorrects")
+            st.stop()
+        elif authentication_status == None:
+            logger.info("Aucune tentative de connexion")
+            st.stop()
+    
+    # Si l'authentification a réussi, afficher l'interface principale
+    if authentication_status:
+        logger.info(f"Utilisateur authentifié avec succès: {st.session_state.get('name')}")
+        
+        # Ajouter un bouton de déconnexion discret en haut à droite
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col3:
+            try:
+                logger.debug("Ajout du bouton de déconnexion")
+                authenticator.logout(location='main', button_name="Déconnexion")
+                logger.debug("Bouton de déconnexion ajouté avec succès")
+            except Exception as e:
+                logger.error(f"Erreur lors de l'ajout du bouton de déconnexion: {format_exception(e)}")
+                st.error(f"Erreur lors de l'ajout du bouton de déconnexion: {str(e)}")
+        
+        # Afficher l'interface principale
+        main_app_ui()
+    
+except Exception as e:
+    logger.critical(f"Erreur critique dans le système d'authentification: {format_exception(e)}")
+    st.error(f"Erreur d'authentification: {str(e)}")
+    # Afficher le traceback complet pour le débogage
+    st.exception(e)
+    
+    # En cas d'erreur critique, afficher tout de même un formulaire de connexion basique
+    st.markdown("<h1 style='text-align: center;'>Assistant de Recherche M&A</h1>", unsafe_allow_html=True)
+    st.warning("Une erreur s'est produite avec le système d'authentification. Veuillez réessayer plus tard ou contacter l'administrateur.")
+    st.stop()
