@@ -15,13 +15,13 @@ def main_app_ui():
 
     # Charger l'image pour l'avatar
     try:
-        assistant_avatar = Image.open('/Users/oscarsatre/CascadeProjects/windsurf-project/mna-research-assistant/assets/logo-scalene.webp')
+        assistant_avatar = Image.open('assets/logo-scalene.webp')
     except Exception as e:
         logger.error(f"Erreur lors du chargement de l'image: {e}")
         assistant_avatar = ""  # Utiliser un placeholder en cas d'erreur
 
     # Utiliser une icône Material Design pour l'avatar utilisateur (équivalent à person-circle de Bootstrap)
-    user_avatar = "/Users/oscarsatre/CascadeProjects/windsurf-project/mna-research-assistant/assets/person-circle.svg"
+    user_avatar = "assets/person-circle.svg"
 
     # Initialiser l'historique du chat
     if "messages" not in st.session_state:
