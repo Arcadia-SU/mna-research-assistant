@@ -128,14 +128,8 @@ def main_app_ui():
     if len(st.session_state.messages) > 2:  # Plus que le message système + 1 échange
         col1, col2 = st.columns([3, 1])
         
-        # Bouton Nouvelle conversation dans la première colonne (plus large)
+        # Bouton de déconnexion
         with col1:
-            if st.button("Nouvelle conversation"):
-                st.session_state.messages = [st.session_state.messages[0]]  # Garder uniquement le message système
-                st.experimental_rerun()
-        
-        # Bouton de déconnexion dans la deuxième colonne (plus étroite) avec alignement à droite
-        with col2:
             # Utiliser stylable_container pour aligner le bouton à droite
             with stylable_container(
                 key="logout_button_container",
