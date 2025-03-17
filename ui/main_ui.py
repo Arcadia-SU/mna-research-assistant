@@ -65,7 +65,14 @@ def main_app_ui():
                     st.markdown(message["content"])
             else:
                 with st.chat_message(message["role"], avatar=assistant_avatar):
-                    st.markdown(message["content"])
+                    # Afficher le message texte
+                    message_text_container = st.container()
+                    with message_text_container:
+                        st.markdown(message["content"])
+                    
+                    # Afficher les fichiers associés à ce message si existants
+                    if "message_id" in message:
+                        llm.display_message_files(message["message_id"])
 
     # Traiter l'entrée utilisateur stockée dans session_state
     if st.session_state.user_input:
@@ -82,12 +89,40 @@ def main_app_ui():
         with message_container:
             with st.chat_message("user", avatar=user_avatar):
                 st.markdown(prompt)
-            with st.chat_message("assistant", avatar=assistant_avatar), st.empty(): # (Bug de streamlit : texte fantôme dupliqué si on n'ajoute pas cet empty)
-                stream = llm.get_stream(st.session_state.messages)
-                response = st.write_stream(stream)
+                
+            # On place à la fois le message et son contenu dans un container parent
+            assistant_message_container = st.container()
+            
+            with assistant_message_container:
+                with st.chat_message("assistant", avatar=assistant_avatar):
+                    # Streaming du message
+                    stream = llm.get_stream(st.session_state.messages)
+                    response = st.write_stream(stream)
+                    
+                    # Récupérer le dernier message et son ID
+                    try:
+                        latest_messages = llm.client.beta.threads.messages.list(
+                            thread_id=st.session_state.thread_id,
+                            order="desc",
+                            limit=1
+                        )
+                        if latest_messages.data:
+                            latest_message = latest_messages.data[0]
+                            # Afficher les fichiers associés au message
+                            llm.display_message_files(latest_message.id)
+                            # Stocker l'ID pour l'historique
+                            current_message_id = latest_message.id
+                        else:
+                            current_message_id = None
+                    except Exception as e:
+                        st.error(f"Erreur lors de la récupération du message: {e}")
+                        current_message_id = None
         
         # Ajouter la réponse à l'historique
-        st.session_state.messages.append({"role": "assistant", "content": response})
+        message_to_append = {"role": "assistant", "content": response}
+        if current_message_id:
+            message_to_append["message_id"] = current_message_id
+        st.session_state.messages.append(message_to_append)
     
     # Créer une ligne avec deux colonnes pour les boutons
     if len(st.session_state.messages) > 2:  # Plus que le message système + 1 échange
